@@ -209,16 +209,16 @@ int SensorPollContext::poll_poll(struct sensors_poll_device_t *dev, sensors_even
 						continue;
 					rot = ctx->rotation;
 					break;
-				case KEY_UP:
+				case FN_ROT_0:
 					rot = ROT_0;
 					break;
-				case KEY_RIGHT:
+				case FN_ROT_90:
 					rot = ROT_90;
 					break;
-				case KEY_DOWN:
+				case FN_ROT_180:
 					rot = ROT_180;
 					break;
-				case KEY_LEFT:
+				case FN_ROT_270:
 					rot = ROT_270;
 					break;
 #if 0

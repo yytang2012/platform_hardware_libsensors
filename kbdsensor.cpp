@@ -148,9 +148,9 @@ SensorPollContext::SensorPollContext(const struct hw_module_t *module, struct hw
 	orients[ROT_270].acceleration.z = -sin_angle;
 
 	delay.tv_sec = 0;
-	delay.tv_nsec = 300000000L;
+	delay.tv_nsec = 200000000L;
 
-	LOGD("%s: dev=%p ufd=%d fd=%d", __FUNCTION__, this, ufd, fd);
+	LOGV("%s: dev=%p ufd=%d fd=%d", __FUNCTION__, this, ufd, fd);
 }
 
 SensorPollContext::~SensorPollContext()
@@ -180,8 +180,10 @@ int SensorPollContext::poll_poll(struct sensors_poll_device_t *dev, sensors_even
 {
 	LOGD("%s: dev=%p data=%p count=%d", __FUNCTION__, dev, data, count);
 	SensorPollContext *ctx = reinterpret_cast<SensorPollContext *>(dev);
+	struct timespec t;
 
 	struct pollfd &pfd = ctx->pfd;
+	nanosleep(&ctx->delay, 0);
 	while (int pollres = ::poll(&pfd, 1, -1)) {
 		if (pollres < 0) {
 			LOGE("%s: poll %d error: %s", __FUNCTION__, pfd.fd, strerror(errno));
@@ -244,10 +246,11 @@ int SensorPollContext::poll_poll(struct sensors_poll_device_t *dev, sensors_even
 			write(ctx->ufd, &iev, sizeof(iev));
 	}
 
-	LOGD("%s: dev=%p ufd=%d fd=%d rotation=%d", __FUNCTION__, dev, ctx->ufd, pfd.fd, ctx->rotation * 90);
-	nanosleep(&ctx->delay, 0);
+	LOGV("%s: dev=%p ufd=%d fd=%d rotation=%d", __FUNCTION__, dev, ctx->ufd, pfd.fd, ctx->rotation * 90);
 	data[0] = ctx->orients[ctx->rotation];
-	data[0].timestamp = time(0) * 1000000000L;
+	t.tv_sec = t.tv_nsec = 0;
+	clock_gettime(CLOCK_MONOTONIC, &t);
+	data[0].timestamp = int64_t(t.tv_sec) * 1000000000LL + t.tv_nsec;
 	return 1;
 }
 

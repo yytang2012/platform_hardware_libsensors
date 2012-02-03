@@ -27,24 +27,16 @@
 const int ID_ACCELERATION = (SENSORS_HANDLE_BASE + 0);
 
 template <typename T> struct SensorFd : T {
-	int ufd;
-
 	SensorFd(const struct hw_module_t *module, struct hw_device_t **device);
-	~SensorFd();
 };
 
-template <typename T> SensorFd<T>::SensorFd(const struct hw_module_t *module, struct hw_device_t **device) : ufd(-1)
+template <typename T> SensorFd<T>::SensorFd(const struct hw_module_t *module, struct hw_device_t **device)
 {
 	this->common.tag     = HARDWARE_DEVICE_TAG;
 	this->common.version = 0;
 	this->common.module  = const_cast<struct hw_module_t *>(module);
 	*device              = &this->common;
 	LOGD("%s: module=%p dev=%p", __FUNCTION__, module, *device);
-}
-
-template <typename T> SensorFd<T>::~SensorFd()
-{
-	close(ufd);
 }
 
 struct SensorPollContext : SensorFd<sensors_poll_device_t> {
@@ -109,22 +101,6 @@ SensorPollContext::SensorPollContext(const struct hw_module_t *module, struct hw
 		closedir(dir);
 	}
 
-	ufd = open("/dev/uinput", O_WRONLY | O_NDELAY);
-	if (ufd >= 0) {
-		struct uinput_user_dev ud;
-		memset(&ud, 0, sizeof(ud));
-		strcpy(ud.name, "Tega V2 Buttons");
-		write(ufd, &ud, sizeof(ud));
-		ioctl(ufd, UI_SET_EVBIT, EV_KEY);
-		ioctl(ufd, UI_SET_EVBIT, EV_REP);
-		ioctl(ufd, UI_SET_KEYBIT, KEY_ESC);
-		ioctl(ufd, UI_SET_KEYBIT, KEY_COMPOSE);
-		ioctl(ufd, UI_SET_KEYBIT, KEY_LEFTMETA);
-		ioctl(ufd, UI_DEV_CREATE, 0);
-	} else {
-		LOGE("could not open uinput device: %s", strerror(errno));
-	}
-
 	pfd.events = POLLIN;
 	orients[ROT_0].version = sizeof(sensors_event_t);
 	orients[ROT_0].sensor = ID_ACCELERATION;
@@ -150,7 +126,7 @@ SensorPollContext::SensorPollContext(const struct hw_module_t *module, struct hw
 	delay.tv_sec = 0;
 	delay.tv_nsec = 200000000L;
 
-	LOGV("%s: dev=%p ufd=%d fd=%d", __FUNCTION__, this, ufd, fd);
+	LOGV("%s: dev=%p fd=%d", __FUNCTION__, this, fd);
 }
 
 SensorPollContext::~SensorPollContext()
@@ -241,12 +217,9 @@ int SensorPollContext::poll_poll(struct sensors_poll_device_t *dev, sensors_even
 					break;
 			}
 		}
-
-		if (ctx->ufd >= 0)
-			write(ctx->ufd, &iev, sizeof(iev));
 	}
 
-	LOGV("%s: dev=%p ufd=%d fd=%d rotation=%d", __FUNCTION__, dev, ctx->ufd, pfd.fd, ctx->rotation * 90);
+	LOGV("%s: dev=%p fd=%d rotation=%d", __FUNCTION__, dev, pfd.fd, ctx->rotation * 90);
 	data[0] = ctx->orients[ctx->rotation];
 	t.tv_sec = t.tv_nsec = 0;
 	clock_gettime(CLOCK_MONOTONIC, &t);

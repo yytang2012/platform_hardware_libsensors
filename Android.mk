@@ -23,3 +23,8 @@ endif
 
 include $(BUILD_SHARED_LIBRARY)
 endif
+
+ifeq ($(strip $(BOARD_USES_HDAPS_ACCEL)),true)
+LOCAL_SRC_FILES := hdaps.c
+include $(BUILD_SHARED_LIBRARY)
+endif

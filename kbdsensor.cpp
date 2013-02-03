@@ -2,7 +2,7 @@
  *
  * Atkbd style sensor
  *
- * Copyright (C) 2011 The Android-x86 Open Source Project
+ * Copyright (C) 2011-2013 The Android-x86 Open Source Project
  *
  * by Chih-Wei Huang <cwhuang@linux.org.tw>
  *
@@ -14,6 +14,7 @@
 
 #include <cmath>
 #include <cerrno>
+#include <cstdlib>
 #include <cstring>
 #include <sys/stat.h>
 #include <poll.h>
@@ -23,6 +24,19 @@
 #include <linux/input.h>
 #include <linux/uinput.h>
 #include <hardware/sensors.h>
+#include <cutils/properties.h>
+
+struct KbdSensorKeys {
+	char name[64];
+	int keys[8];
+} KeysType[] = {
+	{ "", { } },
+	{ "AT Translated Set 2 keyboard", { EV_KEY, KEY_UP, KEY_RIGHT, KEY_DOWN, KEY_LEFT, KEY_LEFTALT, KEY_LEFTCTRL, 1 } },
+	{ "AT Translated Set 2 keyboard", { EV_MSC, 91, 115, 123, 109, KEY_LEFTALT, KEY_LEFTCTRL, 3 } },
+	{ "AT Translated Set 2 keyboard", { EV_KEY, KEY_F5, KEY_F8, KEY_F6, KEY_F7, KEY_LEFTALT, KEY_LEFTCTRL, 1 } },
+	{ "AT Translated Set 2 keyboard", { EV_KEY, KEY_F9, KEY_F12, KEY_F10, KEY_F11, KEY_LEFTALT, KEY_LEFTCTRL, 1 } },
+	{ "Asus Laptop extra buttons", { EV_KEY, KEY_F9, KEY_F12, KEY_F10, KEY_F11, KEY_LEFTALT, KEY_LEFTCTRL, 2 } },
+};
 
 const int ID_ACCELERATION = (SENSORS_HANDLE_BASE + 0);
 
@@ -50,6 +64,8 @@ struct SensorPollContext : SensorFd<sensors_poll_device_t> {
 	static int poll_setDelay(struct sensors_poll_device_t *dev, int handle, int64_t ns);
 	static int poll_poll(struct sensors_poll_device_t *dev, sensors_event_t *data, int count);
 
+	int doPoll(sensors_event_t *data, int count);
+
 	enum {
 		ROT_0,
 		ROT_90,
@@ -62,10 +78,11 @@ struct SensorPollContext : SensorFd<sensors_poll_device_t> {
 	struct timespec delay;
 	struct pollfd pfd;
 	sensors_event_t orients[4];
+	KbdSensorKeys *ktype;
 };
 
 SensorPollContext::SensorPollContext(const struct hw_module_t *module, struct hw_device_t **device)
-      : SensorFd<sensors_poll_device_t>(module, device), enabled(false), rotation(ROT_0)
+      : SensorFd<sensors_poll_device_t>(module, device), enabled(false), rotation(ROT_0), ktype(KeysType)
 {
 	common.close = poll_close;
 	activate     = poll_activate;
@@ -74,11 +91,19 @@ SensorPollContext::SensorPollContext(const struct hw_module_t *module, struct hw
 
 	int &fd = pfd.fd;
 	const char *dirname = "/dev/input";
+	char prop[PROPERTY_VALUE_MAX];
+	if (property_get("hal.sensors.kbd.keys", prop, 0))
+		sscanf(prop, "%s,%d,%d,%d,%d,%d,%d,%d,%d", ktype->name, ktype->keys,
+				ktype->keys + 1, ktype->keys + 2, ktype->keys + 3, ktype->keys + 4, ktype->keys + 5, ktype->keys + 6, ktype->keys + 7);
+	else if (property_get("hal.sensors.kbd.type", prop, 0))
+		ktype = &KeysType[atoi(prop)];
+	else
+		ktype = 0;
 	if (DIR *dir = opendir(dirname)) {
+		char name[PATH_MAX];
 		while (struct dirent *de = readdir(dir)) {
-			if (de->d_name[0] != 'e') // eventX
+			if (de->d_name[0] != 'e') // not eventX
 				continue;
-			char name[PATH_MAX];
 			snprintf(name, PATH_MAX, "%s/%s", dirname, de->d_name);
 			fd = open(name, O_RDWR);
 			if (fd < 0) {
@@ -91,13 +116,23 @@ SensorPollContext::SensorPollContext(const struct hw_module_t *module, struct hw
 				name[0] = '\0';
 			}
 
-			// TODO: parse /etc/excluded-input-devices.xml
-			if (!strcmp(name, "AT Translated Set 2 keyboard")) {
-				LOGI("open %s ok", name);
-				break;
+			if (ktype) {
+				if (!strcmp(name, ktype->name))
+					break;
+			} else {
+				ktype = KeysType + (sizeof(KeysType) / sizeof(KeysType[0]));
+				while (--ktype != KeysType)
+					if (!strcmp(name, ktype->name))
+						break;
+				if (ktype != KeysType)
+					break;
+				else
+					ktype = 0;
 			}
 			close(fd);
+			fd = -1;
 		}
+		LOGI_IF(fd >= 0, "Open %s ok, fd=%d", name, fd);
 		closedir(dir);
 	}
 
@@ -126,7 +161,7 @@ SensorPollContext::SensorPollContext(const struct hw_module_t *module, struct hw
 	delay.tv_sec = 0;
 	delay.tv_nsec = 200000000L;
 
-	LOGV("%s: dev=%p fd=%d", __FUNCTION__, this, fd);
+	LOGD("%s: dev=%p fd=%d", __FUNCTION__, this, fd);
 }
 
 SensorPollContext::~SensorPollContext()
@@ -140,6 +175,7 @@ int SensorPollContext::poll_close(struct hw_device_t *dev)
 	delete reinterpret_cast<SensorPollContext *>(dev);
 	return 0;
 }
+
 int SensorPollContext::poll_activate(struct sensors_poll_device_t *dev, int handle, int enabled)
 {
 	LOGD("%s: dev=%p handle=%d enabled=%d", __FUNCTION__, dev, handle, enabled);
@@ -147,19 +183,24 @@ int SensorPollContext::poll_activate(struct sensors_poll_device_t *dev, int hand
 	ctx->enabled = enabled;
 	return 0;
 }
+
 int SensorPollContext::poll_setDelay(struct sensors_poll_device_t *dev, int handle, int64_t ns)
 {
 	LOGD("%s: dev=%p delay-ns=%lld", __FUNCTION__, dev, ns);
 	return 0;
 }
+
 int SensorPollContext::poll_poll(struct sensors_poll_device_t *dev, sensors_event_t *data, int count)
 {
 	LOGD("%s: dev=%p data=%p count=%d", __FUNCTION__, dev, data, count);
 	SensorPollContext *ctx = reinterpret_cast<SensorPollContext *>(dev);
-	struct timespec t;
+	return ctx->doPoll(data, count);
+}
 
-	struct pollfd &pfd = ctx->pfd;
-	nanosleep(&ctx->delay, 0);
+int SensorPollContext::doPoll(sensors_event_t *data, int count)
+{
+	nanosleep(&delay, 0);
+	int *keys = ktype->keys;
 	while (int pollres = ::poll(&pfd, 1, -1)) {
 		if (pollres < 0) {
 			LOGE("%s: poll %d error: %s", __FUNCTION__, pfd.fd, strerror(errno));
@@ -177,54 +218,46 @@ int SensorPollContext::poll_poll(struct sensors_poll_device_t *dev, sensors_even
 			continue;
 		}
 		LOGD("type=%d scancode=%d value=%d from fd=%d", iev.type, iev.code, iev.value, pfd.fd);
-		if (iev.type == EV_KEY) {
-			int rot = -1;
-			switch (iev.code)
-			{
-				case KEY_LEFTCTRL:
-				case KEY_LEFTALT:
-					if (iev.value)
-						continue;
-					rot = ctx->rotation;
-					break;
-				case FN_ROT_0:
-					rot = ROT_0;
-					break;
-				case FN_ROT_90:
-					rot = ROT_90;
-					break;
-				case FN_ROT_180:
-					rot = ROT_180;
-					break;
-				case FN_ROT_270:
-					rot = ROT_270;
-					break;
-#if 0
-				case KEY_ESC:
-					iev.code = KEY_LEFTMETA;
-					break;
-				case KEY_COMPOSE:
-					iev.code = KEY_ESC;
-					break;
-#endif
-			}
+		if (iev.type == keys[0]) {
+			int rot;
+			int input = (keys[0] == EV_MSC) ? iev.value : iev.code;
+			if (input == keys[1])
+				rot = ROT_0;
+			else if (input == keys[2])
+				rot = ROT_90;
+			else if (input == keys[3])
+				rot = ROT_180;
+			else if (input == keys[4])
+				rot = ROT_270;
+			else if (input == keys[5] || input == keys[6])
+				rot = rotation;
+			else
+				rot = -1;
+
 			if (rot >= 0) {
-				if (rot != ctx->rotation) {
-					LOGI("orientation changed from %d to %d", ctx->rotation * 90, rot * 90);
-					ctx->rotation = rot;
+				if (rot != rotation) {
+					LOGI("orientation changed from %d to %d", rotation * 90, rot * 90);
+					rotation = rot;
 				}
-				if (ctx->enabled && count > 0)
+				if (enabled && count > 0)
 					break;
 			}
 		}
 	}
 
-	LOGV("%s: dev=%p fd=%d rotation=%d", __FUNCTION__, dev, pfd.fd, ctx->rotation * 90);
-	data[0] = ctx->orients[ctx->rotation];
+	int cnt;
+	struct timespec t;
+	LOGV("%s: dev=%p fd=%d rotation=%d", __FUNCTION__, this, pfd.fd, rotation * 90);
+	data[0] = orients[rotation];
 	t.tv_sec = t.tv_nsec = 0;
 	clock_gettime(CLOCK_MONOTONIC, &t);
 	data[0].timestamp = int64_t(t.tv_sec) * 1000000000LL + t.tv_nsec;
-	return 1;
+	for (cnt = 1; cnt < keys[7] && cnt < count; ++cnt) {
+		data[cnt] = data[cnt - 1];
+		data[cnt].timestamp += delay.tv_nsec;
+		nanosleep(&delay, 0);
+	}
+	return cnt;
 }
 
 static int open_kbd_sensor(const struct hw_module_t *module, const char *id, struct hw_device_t **device)

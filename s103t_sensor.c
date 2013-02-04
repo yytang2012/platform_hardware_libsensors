@@ -32,19 +32,19 @@ typedef struct SensorContext {
 
 static int context__activate(struct sensors_poll_device_t *dev, int handle, int enabled)
 {
-    LOGD("%s: called", __FUNCTION__);
+    ALOGD("%s: called", __FUNCTION__);
     return 0;
 }
 
 static int context__setDelay(struct sensors_poll_device_t *dev, int handle, int64_t ns)
 {
-    LOGD("%s: called", __FUNCTION__);
+    ALOGD("%s: called", __FUNCTION__);
     return 0;
 }
 
 static int context__close(struct hw_device_t *dev)
 {
-    LOGD("%s: called", __FUNCTION__);
+    ALOGD("%s: called", __FUNCTION__);
     return 0;
 }
 
@@ -52,7 +52,7 @@ static int context__poll(struct sensors_poll_device_t *dev, sensors_event_t* dat
 {
     bool bChanged = false;
     SensorContext* ctx = (SensorContext*) dev;
-    LOGD("%s: dev=%p data=%p count=%d", __FUNCTION__, dev, data, count);
+    ALOGD("%s: dev=%p data=%p count=%d", __FUNCTION__, dev, data, count);
     while (1) {
         struct input_event iev;
         size_t res = read(ctx->fd, &iev, sizeof(iev));
@@ -61,7 +61,7 @@ static int context__poll(struct sensors_poll_device_t *dev, sensors_event_t* dat
             const double cos_angle = GRAVITY_EARTH * cos(angle / M_PI);
             const double sin_angle = GRAVITY_EARTH * sin(angle / M_PI);
             if (iev.type == EV_KEY) {
-                LOGD("type=%d scancode=%d value=%d from fd=%d", iev.type, iev.code, iev.value, ctx->fd);
+                ALOGD("type=%d scancode=%d value=%d from fd=%d", iev.type, iev.code, iev.value, ctx->fd);
                 if (iev.code == SKEY_ROTATE_MAPPING && iev.value == 1) {
                     if (ctx->orientation.acceleration.x != 0.0) {
                         // ROT_0
@@ -78,7 +78,7 @@ static int context__poll(struct sensors_poll_device_t *dev, sensors_event_t* dat
                 }
             }
             else if (iev.type == EV_SW) {
-                LOGD("%s: switching to/from Table Mode type=%d scancode=%d value=%d", __FUNCTION__,iev.type, iev.code, iev.value);
+                ALOGD("%s: switching to/from Table Mode type=%d scancode=%d value=%d", __FUNCTION__,iev.type, iev.code, iev.value);
                 if (iev.value == 0) {
                     // ROT_0
                     ctx->orientation.acceleration.x = 0.00;
@@ -94,7 +94,7 @@ static int context__poll(struct sensors_poll_device_t *dev, sensors_event_t* dat
             }
             if (bChanged) {
                 nanosleep(&ctx->delay, 0);
-                LOGI("orientation changed");
+                ALOGI("orientation changed");
                 data[0] = ctx->orientation;
                 data[0].timestamp = iev.time.tv_sec*1000000000LL + iev.time.tv_usec*1000; 
                 data[1] = ctx->orientation;
@@ -123,7 +123,7 @@ static const struct sensor_t sSensorListInit[] = {
 
 static int sensors__get_sensors_list(struct sensors_module_t* module, struct sensor_t const** list)
 {
-    LOGD("%s: sensors__get_sensors_list called", __FUNCTION__);
+    ALOGD("%s: sensors__get_sensors_list called", __FUNCTION__);
     // there is exactly one sensor available, the accelerometer sensor
     *list = sSensorListInit;
     return 1;
@@ -131,13 +131,13 @@ static int sensors__get_sensors_list(struct sensors_module_t* module, struct sen
 
 static int open_sensors(const struct hw_module_t* module, const char* id, struct hw_device_t **device)
 {
-    LOGD("%s: id=%s", __FUNCTION__, id);
+    ALOGD("%s: id=%s", __FUNCTION__, id);
 
     SensorContext *ctx = malloc(sizeof(*ctx));
     if (!ctx)
         return -EINVAL;
 
-    LOGD("%s: init sensors device", __FUNCTION__);
+    ALOGD("%s: init sensors device", __FUNCTION__);
     memset(ctx, 0, sizeof(*ctx));
 
     ctx->device.common.tag = HARDWARE_DEVICE_TAG;
@@ -149,32 +149,32 @@ static int open_sensors(const struct hw_module_t* module, const char* id, struct
     if (dir != NULL) {
         struct dirent *de;
         // loop over all "eventXX" in /dev/input and look for our driver
-        LOGD("%s: looping over all eventXX...", __FUNCTION__);
+        ALOGD("%s: looping over all eventXX...", __FUNCTION__);
         while ((de = readdir(dir))) {
             if (de->d_name[0] != 'e') // eventX
                 continue;
             char name[PATH_MAX];
             snprintf(name, PATH_MAX, "%s/%s", dirname, de->d_name);
-            LOGD("%s: open device %s", __FUNCTION__, name);
+            ALOGD("%s: open device %s", __FUNCTION__, name);
             ctx->fd = open(name, O_RDWR);
             if (ctx->fd < 0) {
-                LOGE("could not open %s, %s", name, strerror(errno));
+                ALOGE("could not open %s, %s", name, strerror(errno));
                 continue;
             }
             name[sizeof(name) - 1] = '\0';
             if (ioctl(ctx->fd, EVIOCGNAME(sizeof(name) - 1), &name) < 1) {
-                LOGE("could not get device name for %s, %s\n", name, strerror(errno));
+                ALOGE("could not get device name for %s, %s\n", name, strerror(errno));
                 name[0] = '\0';
             }
 
             if (!strcmp(name, DRIVER_DESC)) {
                 // ok, it's our driver, stop the loop ...
-                LOGI("found device %s", name);
+                ALOGI("found device %s", name);
                 break;
             }
             close(ctx->fd);
         }
-        LOGD("%s: stop loop and closing directory", __FUNCTION__);
+        ALOGD("%s: stop loop and closing directory", __FUNCTION__);
         closedir(dir);
     }
 
@@ -198,7 +198,7 @@ static struct hw_module_methods_t sensors_module_methods = {
    .open = open_sensors
 };
 
-const struct sensors_module_t HAL_MODULE_INFO_SYM = {
+struct sensors_module_t HAL_MODULE_INFO_SYM = {
     .common = {
         .tag = HARDWARE_MODULE_TAG,
         .version_major = 1,

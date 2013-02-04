@@ -9,6 +9,8 @@
  *
  **/
 
+#define LOG_TAG "HdapsSensors"
+
 #include <stdint.h>
 #include <string.h>
 #include <unistd.h>
@@ -84,7 +86,7 @@ static int device__poll(struct sensors_poll_device_t *device,
 		ret = read(dev->fd, &event, sizeof(event));
 
 #ifdef DEBUG_SENSOR
-		LOGD("hdaps event %d - %d - %d\n", event.type, event.code, event.value);
+		ALOGD("hdaps event %d - %d - %d\n", event.type, event.code, event.value);
 #endif
 		if (event.type == EV_ABS) {
 			switch (event.code) {
@@ -151,7 +153,7 @@ static int open_input_device(void) {
 
 		if (!strcmp(name, SENSOR_NAME)) {
 #ifdef DEBUG_SENSOR
-			LOGI("devname is %s \n", devname);
+			ALOGI("devname is %s \n", devname);
 #endif
 		} else {
 			close(fd);
@@ -193,7 +195,7 @@ static int sensors__get_sensors_list(struct sensors_module_t* module,
 static struct hw_module_methods_t sensors_module_methods = {
 		.open = open_sensors };
 
-const struct sensors_module_t HAL_MODULE_INFO_SYM = {
+struct sensors_module_t HAL_MODULE_INFO_SYM = {
 	.common = {
 		.tag = HARDWARE_MODULE_TAG,
 		.version_major = 1,
@@ -225,7 +227,7 @@ static int open_sensors(const struct hw_module_t* module, const char* name,
 	dev->device.poll = device__poll;
 
 	if ((dev->fd = open_input_device()) < 0) {
-		LOGE("g sensor get class path error \n");
+		ALOGE("g sensor get class path error \n");
 	} else {
 		*device = &dev->device.common;
 		status = 0;

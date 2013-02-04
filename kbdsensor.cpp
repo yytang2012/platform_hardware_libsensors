@@ -50,7 +50,7 @@ template <typename T> SensorFd<T>::SensorFd(const struct hw_module_t *module, st
 	this->common.version = 0;
 	this->common.module  = const_cast<struct hw_module_t *>(module);
 	*device              = &this->common;
-	LOGD("%s: module=%p dev=%p", __FUNCTION__, module, *device);
+	ALOGD("%s: module=%p dev=%p", __FUNCTION__, module, *device);
 }
 
 struct SensorPollContext : SensorFd<sensors_poll_device_t> {
@@ -107,12 +107,12 @@ SensorPollContext::SensorPollContext(const struct hw_module_t *module, struct hw
 			snprintf(name, PATH_MAX, "%s/%s", dirname, de->d_name);
 			fd = open(name, O_RDWR);
 			if (fd < 0) {
-				LOGE("could not open %s, %s", name, strerror(errno));
+				ALOGE("could not open %s, %s", name, strerror(errno));
 				continue;
 			}
 			name[sizeof(name) - 1] = '\0';
 			if (ioctl(fd, EVIOCGNAME(sizeof(name) - 1), &name) < 1) {
-				LOGE("could not get device name for %s, %s\n", name, strerror(errno));
+				ALOGE("could not get device name for %s, %s\n", name, strerror(errno));
 				name[0] = '\0';
 			}
 
@@ -132,7 +132,7 @@ SensorPollContext::SensorPollContext(const struct hw_module_t *module, struct hw
 			close(fd);
 			fd = -1;
 		}
-		LOGI_IF(fd >= 0, "Open %s ok, fd=%d", name, fd);
+		ALOGI_IF(fd >= 0, "Open %s ok, fd=%d", name, fd);
 		closedir(dir);
 	}
 
@@ -161,7 +161,7 @@ SensorPollContext::SensorPollContext(const struct hw_module_t *module, struct hw
 	delay.tv_sec = 0;
 	delay.tv_nsec = 200000000L;
 
-	LOGD("%s: dev=%p fd=%d", __FUNCTION__, this, fd);
+	ALOGD("%s: dev=%p fd=%d", __FUNCTION__, this, fd);
 }
 
 SensorPollContext::~SensorPollContext()
@@ -171,14 +171,14 @@ SensorPollContext::~SensorPollContext()
 
 int SensorPollContext::poll_close(struct hw_device_t *dev)
 {
-	LOGD("%s: dev=%p", __FUNCTION__, dev);
+	ALOGD("%s: dev=%p", __FUNCTION__, dev);
 	delete reinterpret_cast<SensorPollContext *>(dev);
 	return 0;
 }
 
 int SensorPollContext::poll_activate(struct sensors_poll_device_t *dev, int handle, int enabled)
 {
-	LOGD("%s: dev=%p handle=%d enabled=%d", __FUNCTION__, dev, handle, enabled);
+	ALOGD("%s: dev=%p handle=%d enabled=%d", __FUNCTION__, dev, handle, enabled);
 	SensorPollContext *ctx = reinterpret_cast<SensorPollContext *>(dev);
 	ctx->enabled = enabled;
 	return 0;
@@ -186,13 +186,13 @@ int SensorPollContext::poll_activate(struct sensors_poll_device_t *dev, int hand
 
 int SensorPollContext::poll_setDelay(struct sensors_poll_device_t *dev, int handle, int64_t ns)
 {
-	LOGD("%s: dev=%p delay-ns=%lld", __FUNCTION__, dev, ns);
+	ALOGD("%s: dev=%p delay-ns=%lld", __FUNCTION__, dev, ns);
 	return 0;
 }
 
 int SensorPollContext::poll_poll(struct sensors_poll_device_t *dev, sensors_event_t *data, int count)
 {
-	LOGD("%s: dev=%p data=%p count=%d", __FUNCTION__, dev, data, count);
+	ALOGV("%s: dev=%p data=%p count=%d", __FUNCTION__, dev, data, count);
 	SensorPollContext *ctx = reinterpret_cast<SensorPollContext *>(dev);
 	return ctx->doPoll(data, count);
 }
@@ -203,21 +203,21 @@ int SensorPollContext::doPoll(sensors_event_t *data, int count)
 	int *keys = ktype->keys;
 	while (int pollres = ::poll(&pfd, 1, -1)) {
 		if (pollres < 0) {
-			LOGE("%s: poll %d error: %s", __FUNCTION__, pfd.fd, strerror(errno));
+			ALOGE("%s: poll %d error: %s", __FUNCTION__, pfd.fd, strerror(errno));
 			break;
 		}
 		if (!(pfd.revents & POLLIN)) {
-			LOGW("%s: ignore revents %d", __FUNCTION__, pfd.revents);
+			ALOGW("%s: ignore revents %d", __FUNCTION__, pfd.revents);
 			continue;
 		}
 
 		struct input_event iev;
 		size_t res = ::read(pfd.fd, &iev, sizeof(iev));
 		if (res < sizeof(iev)) {
-			LOGW("insufficient input data(%d)? fd=%d", res, pfd.fd);
+			ALOGW("insufficient input data(%d)? fd=%d", res, pfd.fd);
 			continue;
 		}
-		LOGD("type=%d scancode=%d value=%d from fd=%d", iev.type, iev.code, iev.value, pfd.fd);
+		ALOGV("type=%d scancode=%d value=%d from fd=%d", iev.type, iev.code, iev.value, pfd.fd);
 		if (iev.type == keys[0]) {
 			int rot;
 			int input = (keys[0] == EV_MSC) ? iev.value : iev.code;
@@ -236,7 +236,7 @@ int SensorPollContext::doPoll(sensors_event_t *data, int count)
 
 			if (rot >= 0) {
 				if (rot != rotation) {
-					LOGI("orientation changed from %d to %d", rotation * 90, rot * 90);
+					ALOGI("orientation changed from %d to %d", rotation * 90, rot * 90);
 					rotation = rot;
 				}
 				if (enabled && count > 0)
@@ -247,7 +247,6 @@ int SensorPollContext::doPoll(sensors_event_t *data, int count)
 
 	int cnt;
 	struct timespec t;
-	LOGV("%s: dev=%p fd=%d rotation=%d", __FUNCTION__, this, pfd.fd, rotation * 90);
 	data[0] = orients[rotation];
 	t.tv_sec = t.tv_nsec = 0;
 	clock_gettime(CLOCK_MONOTONIC, &t);
@@ -257,12 +256,13 @@ int SensorPollContext::doPoll(sensors_event_t *data, int count)
 		data[cnt].timestamp += delay.tv_nsec;
 		nanosleep(&delay, 0);
 	}
+	ALOGV("%s: dev=%p fd=%d rotation=%d cnt=%d", __FUNCTION__, this, pfd.fd, rotation * 90, cnt);
 	return cnt;
 }
 
 static int open_kbd_sensor(const struct hw_module_t *module, const char *id, struct hw_device_t **device)
 {
-	LOGD("%s: id=%s", __FUNCTION__, id);
+	ALOGD("%s: id=%s", __FUNCTION__, id);
 	return new SensorPollContext(module, device) ? 0 : -EINVAL;
 }
 

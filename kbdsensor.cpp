@@ -290,6 +290,8 @@ static struct sensor_t sSensorListInit[] = {
 		resolution: 1.0f/4032.0f,
 		power: 3.0f,
 		minDelay: 0,
+		fifoReservedEventCount: 0,
+		fifoMaxEventCount: 0,
 		reserved: { }
 	}
 };

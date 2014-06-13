@@ -67,8 +67,7 @@ static int open_accel_sensor(void)
 		 * for our driver.
 		 */
 		ALOGD("%s[%i] Looping over all eventXX...", __func__, __LINE__);
-		do {
-			de = readdir(dir);
+		while ((de = readdir(dir))) {
 			if (de->d_name[0] != 'e')
 				continue;
 			memset(name, 0, PATH_MAX);
@@ -101,7 +100,7 @@ static int open_accel_sensor(void)
 			}
 
 			close(fd);
-		} while (de != NULL);
+		}
 
 		ALOGD("%s[%i] stop loop and closing directory",
 			__func__, __LINE__);

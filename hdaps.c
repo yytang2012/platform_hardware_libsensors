@@ -4,11 +4,13 @@
  * Copyright (C) 2011 The Android-x86 Open Source Project
  *
  * by Stefan Seidel <stefans@android-x86.org>
+ * Adaptation by Tanguy Pruvot <tpruvot@github>
  *
  * Licensed under GPLv2 or later
  *
  **/
 
+/* #define LOG_NDEBUG 0 */
 #define LOG_TAG "HdapsSensors"
 
 #include <stdint.h>
@@ -26,12 +28,9 @@
 
 #include <cutils/atomic.h>
 #include <cutils/log.h>
+#include <cutils/properties.h>
 #include <hardware/sensors.h>
 
-//#define DEBUG_SENSOR		1
-
-#define CONVERT			(GRAVITY_EARTH / 156.0f)
-#define CONVERT_PEGA		(GRAVITY_EARTH / 256.0f)
 #define INPUT_DIR		"/dev/input"
 #define ARRAY_SIZE(a)		(sizeof(a) / sizeof(a[0]))
 #define ID_ACCELERATION		(SENSORS_HANDLE_BASE + 0)
@@ -44,12 +43,25 @@
 typedef struct {
 	const char *name;
 	float conv[3];
+	int swap[3];
 	int avg_cnt;
 } accel_params;
 
+/* precision, result data should give GRAVITY_EARTH ~9.8 */
+#define CONVERT			(GRAVITY_EARTH / 156.0f)
+#define CONVERT_PEGA		(GRAVITY_EARTH / 256.0f)
+#define CONVERT_LIS		(GRAVITY_EARTH / 1024.0f)
+
+/* axis swap for tablet pcs, X=0, Y=1, Z=2 */
+#define NO_SWAP			{ 0, 1, 2 }
+#define SWAP_YXZ		{ 1, 0, 2 }
+#define SWAP_ZXY		{ 2, 0, 1 }
+
 static accel_params accel_list[] = {
-	{ "hdaps", { CONVERT, -CONVERT, 0 }, 1 },
-	{ "Pegatron Lucid Tablet Accelerometer", { CONVERT_PEGA, CONVERT_PEGA, CONVERT_PEGA }, 4 },
+	{ "hdaps", { CONVERT, -CONVERT, 0 }, NO_SWAP, 1 },
+	{ "Pegatron Lucid Tablet Accelerometer", { CONVERT_PEGA, CONVERT_PEGA, CONVERT_PEGA }, NO_SWAP, 4 },
+//	{ "ST LIS3LV02DL Accelerometer",  { -CONVERT_LIS, CONVERT_LIS, CONVERT_LIS }, SWAP_YXZ, 2 }, /* tablet mode */
+	{ "ST LIS3LV02DL Accelerometer",  { CONVERT_LIS, -CONVERT_LIS, CONVERT_LIS }, SWAP_ZXY, 2 }, /* pc mode */
 };
 
 static accel_params accelerometer;
@@ -88,20 +100,46 @@ static int device__poll(struct sensors_poll_device_t *device,
 		sensors_event_t *data, int count) {
 
 	struct input_event event;
-	int ret;
 	struct sensors_poll_context_t *dev =
 			(struct sensors_poll_context_t *) device;
+
+	accel_params signs;
+	char prop[PROPERTY_VALUE_MAX] = "";
+	float val;
+	int x, y, z;
 
 	if (dev->fd < 0)
 		return 0;
 
-	while (1) {
+	// dynamic axis tuning, expect "1,-1,-1" format
+	if (property_get("hal.sensors.axis.revert", prop, 0)) {
+		sscanf(prop, "%d,%d,%d", &x, &y, &z);
+		ALOGD("axis signs set to %d %d %d", x, y, z);
+	} else {
+		x = y = z = 1;
+	}
+	signs.conv[ABS_X] = accelerometer.conv[ABS_X] * x;
+	signs.conv[ABS_Y] = accelerometer.conv[ABS_Y] * y;
+	signs.conv[ABS_Z] = accelerometer.conv[ABS_Z] * z;
 
-		ret = read(dev->fd, &event, sizeof(event));
+	ALOGV("axis convert set to %.6f %.6f %.6f",
+		signs.conv[ABS_X], signs.conv[ABS_Y] ,signs.conv[ABS_Z]);
 
-#ifdef DEBUG_SENSOR
-		ALOGD("hdaps event %d - %d - %d\n", event.type, event.code, event.value);
-#endif
+	// dynamic axis swap, expect "0,1,2" format
+	if (property_get("hal.sensors.axis.order", prop, 0)) {
+		sscanf(prop, "%d,%d,%d", &x, &y, &z);
+		ALOGD("axis order set to %c %c %c", 'x'+x, 'x'+y, 'x'+z);
+	} else {
+		// use default values (accel_params)
+		x = accelerometer.swap[0];
+		y = accelerometer.swap[1];
+		z = accelerometer.swap[2];
+	}
+
+	while (read(dev->fd, &event, sizeof(event)) > 0) {
+
+		ALOGV("gsensor event %d - %d - %d", event.type, event.code, event.value);
+
 		if (event.type == EV_ABS) {
 			switch (event.code) {
 			// Even though this mapping results in wrong results with some apps,
@@ -113,7 +151,13 @@ static int device__poll(struct sensors_poll_device_t *device,
 			case ABS_X: // 0x00
 			case ABS_Y: // 0x01
 			case ABS_Z: // 0x02
-				events_q[event_cnt].v[event.code] = accelerometer.conv[event.code] * event.value;
+				val = signs.conv[event.code] * event.value;
+				if (event.code == ABS_X)
+					events_q[event_cnt].v[x] = val;
+				else if (event.code == ABS_Y)
+					events_q[event_cnt].v[y] = val;
+				else if (event.code == ABS_Z)
+					events_q[event_cnt].v[z] = val;
 				break;
 			}
 		} else if (event.type == EV_SYN) {
@@ -121,7 +165,7 @@ static int device__poll(struct sensors_poll_device_t *device,
 			data->timestamp = (int64_t) ((int64_t) event.time.tv_sec
 					* 1000000000 + (int64_t) event.time.tv_usec * 1000);
 			// hdaps doesn't have z-axis, so simulate it by rotation matrix solution
-			if (accelerometer.conv[2] == 0)
+			if (signs.conv[2] == 0)
 				events_q[event_cnt].z = COS_ASIN_2D(GRAVITY_EARTH, events_q[event_cnt].x, events_q[event_cnt].y);
 			memset(&data->acceleration, 0, sizeof(sensors_vec_t));
 			for (i = 0; i < accelerometer.avg_cnt; ++i) {
@@ -134,6 +178,7 @@ static int device__poll(struct sensors_poll_device_t *device,
 			data->acceleration.status = SENSOR_STATUS_ACCURACY_HIGH;
 			if (++event_cnt >= accelerometer.avg_cnt)
 				event_cnt = 0;
+
 			// spare the CPU if desired
 			if (forced_delay)
 				usleep(forced_delay);
@@ -174,13 +219,12 @@ static int open_input_device(void) {
 			name[0] = '\0';
 		}
 
-#ifdef DEBUG_SENSOR
-		ALOGD("%s name is %s", devname, name);
-#endif
+		ALOGV("%s name is %s", devname, name);
+
 		for (i = 0; i < ARRAY_SIZE(accel_list); ++i) {
 			if (!strcmp(name, accel_list[i].name)) {
 				int c = accel_list[i].avg_cnt;
-				accelerometer.avg_cnt = c;
+				memcpy(&accelerometer, &accel_list[i], sizeof(accel_params));
 				accelerometer.conv[0] = accel_list[i].conv[0] / c;
 				accelerometer.conv[1] = accel_list[i].conv[1] / c;
 				accelerometer.conv[2] = accel_list[i].conv[2] / c;
@@ -258,7 +302,7 @@ static int open_sensors(const struct hw_module_t* module, const char* name,
 	dev->device.poll = device__poll;
 
 	if ((dev->fd = open_input_device()) < 0) {
-		ALOGE("g sensor get class path error \n");
+		ALOGE("GSensor get class path error");
 	} else {
 		*device = &dev->device.common;
 		status = 0;

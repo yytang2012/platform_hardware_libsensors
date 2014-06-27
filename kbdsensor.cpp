@@ -58,6 +58,7 @@ struct SensorPollContext : SensorFd<sensors_poll_device_t> {
   public:
 	SensorPollContext(const struct hw_module_t *module, struct hw_device_t **device);
 	~SensorPollContext();
+	bool isValid() const { return (pfd.fd >= 0); }
 
   private:
 	static int poll_close(struct hw_device_t *dev);
@@ -91,6 +92,7 @@ SensorPollContext::SensorPollContext(const struct hw_module_t *module, struct hw
 	poll         = poll_poll;
 
 	int &fd = pfd.fd;
+	fd = -1;
 	const char *dirname = "/dev/input";
 	char prop[PROPERTY_VALUE_MAX];
 	if (property_get("hal.sensors.kbd.keys", prop, 0))
@@ -201,6 +203,9 @@ int SensorPollContext::poll_poll(struct sensors_poll_device_t *dev, sensors_even
 int SensorPollContext::doPoll(sensors_event_t *data, int count)
 {
 	nanosleep(&delay, 0);
+	if (!isValid())
+		return 0;
+
 	int *keys = ktype->keys;
 	while (int pollres = ::poll(&pfd, 1, -1)) {
 		if (pollres < 0) {
@@ -249,13 +254,13 @@ int SensorPollContext::doPoll(sensors_event_t *data, int count)
 					rotation = ROT_0;
 				else
 					rotation++;
-				}
+			}
 			if (iev.code == keys[2] && iev.value) {
 				if (rotation == ROT_0)
 					rotation = ROT_270;
 				else
 					rotation--;
-				}
+			}
 			break;
 		} else if (iev.type == EV_SW && iev.code == SW_TABLET_MODE) {
 			if (!iev.value)
@@ -284,7 +289,8 @@ int SensorPollContext::doPoll(sensors_event_t *data, int count)
 static int open_kbd_sensor(const struct hw_module_t *module, const char *id, struct hw_device_t **device)
 {
 	ALOGD("%s: id=%s", __FUNCTION__, id);
-	return new SensorPollContext(module, device) ? 0 : -EINVAL;
+	SensorPollContext *ctx = new SensorPollContext(module, device);
+	return (ctx && ctx->isValid()) ? 0 : -EINVAL;
 }
 
 static struct sensor_t sSensorListInit[] = {

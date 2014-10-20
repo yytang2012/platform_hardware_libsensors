@@ -306,6 +306,10 @@ static struct sensor_t sSensorListInit[] = {
 		minDelay: 0,
 		fifoReservedEventCount: 0,
 		fifoMaxEventCount: 0,
+		stringType: SENSOR_STRING_TYPE_ACCELEROMETER,
+		requiredPermission: "",
+		maxDelay: 0,
+		flags: SENSOR_FLAG_ONE_SHOT_MODE,
 		reserved: { }
 	}
 };

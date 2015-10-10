@@ -19,7 +19,6 @@ LOCAL_MODULE := sensors.iio
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_RELATIVE_PATH := hw
 LOCAL_SRC_FILES := iio-sensors.cpp
-include external/stlport/libstlport.mk
 include $(BUILD_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)

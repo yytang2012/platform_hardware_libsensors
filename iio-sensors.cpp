@@ -12,8 +12,8 @@
 
 #define LOG_TAG "iio-sensors"
 
-//#include <cmath>
 #include <new>
+#include <cmath>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>

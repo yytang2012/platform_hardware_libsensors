@@ -381,10 +381,11 @@ SensorPollContext::SensorPollContext(const struct hw_module_t *module, struct hw
 		while (struct dirent *de = readdir(dir)) {
 			if (!strncmp(de->d_name, "iio:device", 10)) {
 				strcpy(path + len, de->d_name);
-				for (int i = 0; probeSensors[i] && i < MAX_SENSORS; ++i) {
+				for (size_t i = 0; i < (sizeof(probeSensors) / sizeof(*probeSensors)); ++i) {
 					if (SensorBase *s = probeSensors[i](path)) {
 						sensors[i] = s;
-						sensors_list[count++] =*s;
+						sensors_list[count++] = *s;
+						ALOGD("found %s", __FUNCTION__, s->name);
 					}
 				}
 			}
@@ -500,5 +501,6 @@ struct sensors_module_t HAL_MODULE_INFO_SYM = {
 		dso: 0,
 		reserved: { }
 	},
-	get_sensors_list: sensors_get_sensors_list
+	get_sensors_list: sensors_get_sensors_list,
+	set_operation_mode: 0
 };

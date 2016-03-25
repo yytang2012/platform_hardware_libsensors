@@ -239,11 +239,21 @@ template<> int Sensor<ID_ACCELERATION>::readEvents(sensors_event_t *data, int cn
 {
 	static float scale = read_sysfs_float((*nodes)[0]);
 	int ret = SensorBase::readEvents(data, cnt);
-	// TODO: read orientation from the properties
+	char cm[PROPERTY_VALUE_MAX];
+	float m[9];
+	int v[3];
+
+	property_get("hal.sensors.iio.accel.matrix", cm, "-1,0,0,0,1,0,0,0,-1" );
+	sscanf(cm, "%f,%f,%f,%f,%f,%f,%f,%f,%f", &m[0], &m[1], &m[2], &m[3], &m[4], &m[5], &m[6], &m[7], &m[8]);
+
 	for (int i = 0; i < ret; ++i) {
-		data[i].acceleration.x = -scale * read_sysfs_int("in_accel_x_raw");
-		data[i].acceleration.y =  scale * read_sysfs_int("in_accel_y_raw");
-		data[i].acceleration.z = -scale * read_sysfs_int("in_accel_z_raw");
+		v[0] = read_sysfs_int("in_accel_x_raw");
+		v[1] = read_sysfs_int("in_accel_y_raw");
+		v[2] = read_sysfs_int("in_accel_z_raw");
+		// create matrix * vector product
+		data[i].acceleration.x = scale * (m[0] * v[0] + m[1] * v[1] + m[2] * v[2]);
+		data[i].acceleration.y = scale * (m[3] * v[0] + m[4] * v[1] + m[5] * v[2]);
+		data[i].acceleration.z = scale * (m[6] * v[0] + m[7] * v[1] + m[8] * v[2]);
 		data[i].acceleration.status = SENSOR_STATUS_ACCURACY_HIGH;
 	}
 	return ret;

@@ -280,10 +280,21 @@ template<> int Sensor<ID_MAGNETIC_FIELD>::readEvents(sensors_event_t *data, int 
 	static float scale_y = (*nodes)[1] ? read_sysfs_float((*nodes)[1]) : scale_x;
 	static float scale_z = (*nodes)[2] ? read_sysfs_float((*nodes)[2]) : scale_x;
 	int ret = SensorBase::readEvents(data, cnt);
+	char cm[PROPERTY_VALUE_MAX];
+	float m[9];
+	int v[3];
+
+	property_get("hal.sensors.iio.magn.matrix", cm, "1,0,0,0,1,0,0,0,1" );
+	sscanf(cm, "%f,%f,%f,%f,%f,%f,%f,%f,%f", &m[0], &m[1], &m[2], &m[3], &m[4], &m[5], &m[6], &m[7], &m[8]);
+
 	for (int i = 0; i < ret; ++i) {
-		data[i].magnetic.x = scale_x * read_sysfs_int("in_magn_x_raw");
-		data[i].magnetic.y = scale_y * read_sysfs_int("in_magn_y_raw");
-		data[i].magnetic.z = scale_z * read_sysfs_int("in_magn_z_raw");
+		v[0] = read_sysfs_int("in_magn_x_raw");
+		v[1] = read_sysfs_int("in_magn_y_raw");
+		v[2] = read_sysfs_int("in_magn_z_raw");
+		// create matrix * vector product
+		data[i].magnetic.x = scale_x * (m[0] * v[0] + m[1] * v[1] + m[2] * v[2]);
+		data[i].magnetic.y = scale_y * (m[3] * v[0] + m[4] * v[1] + m[5] * v[2]);
+		data[i].magnetic.z = scale_z * (m[6] * v[0] + m[7] * v[1] + m[8] * v[2]);
 		data[i].magnetic.status = SENSOR_STATUS_ACCURACY_HIGH;
 	}
 	return ret;

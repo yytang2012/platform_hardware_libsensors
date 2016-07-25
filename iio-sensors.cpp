@@ -421,6 +421,7 @@ SensorPollContext::SensorPollContext(const struct hw_module_t *module, struct hw
 				}
 			}
 		}
+		closedir(dir);
 	}
 	ALOGD("%s: module=%p sensors: %d", __FUNCTION__, module, count);
 }

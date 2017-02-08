@@ -47,3 +47,12 @@ LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_RELATIVE_PATH := hw
 LOCAL_SRC_FILES := w500_sensor.c
 include $(BUILD_SHARED_LIBRARY)
+
+
+include $(CLEAR_VARS)
+LOCAL_SHARED_LIBRARIES := liblog libcutils libdl
+LOCAL_MODULE := sensors.yytang
+LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE_RELATIVE_PATH := hw
+LOCAL_SRC_FILES :=  yytang-sensors.cpp
+include $(BUILD_SHARED_LIBRARY)
